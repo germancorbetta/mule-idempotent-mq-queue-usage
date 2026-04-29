@@ -20,10 +20,6 @@
     <!-- This object store shall save the MD5 keys of the payloads during 5 seconds to avoid reprocessing duplicated payloads in different replicas/workers/nodes, as long as the object store is unique and available for all the replicas/workers/nodes-->
     <os:object-store name="idempotency-store" maxEntries="9999" entryTtl="5" expirationIntervalUnit="SECONDS"/>
 
-    <http:listener-config name="HTTP_Listener_config">
-        <http:listener-connection host="0.0.0.0" port="8081"/>
-    </http:listener-config>
-
     <flow name="idempotent-subscriber-flow">
         <anypoint-mq:subscriber config-ref="Anypoint-MQ-Config" destination="${anypoint.mq.queue}"/>
         <!--  By using MD5 we make sure the idempotent sendsa small value to ObjectStore to avoid issues with OSv2 size limitations-->
