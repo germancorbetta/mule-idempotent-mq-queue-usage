@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+    <anypoint-mq:config name="Anypoint-MQ-Config">
+        <anypoint-mq:connection
+            clientId="${anypoint.mq.clientId}"
+            clientSecret="${anypoint.mq.clientSecret}"
+            url="${anypoint.mq.url}"/>
+    </anypoint-mq:config>
+
+    <!-- This object store shall save the MD5 keys of the payloads during 5 seconds to avoid reprocessing duplicated payloads in different replicas/workers/nodes, as long as the object store is unique and available for all the replicas/workers/nodes-->
+    <os:object-store name="idempotency-store" maxEntries="9999" entryTtl="5" expirationIntervalUnit="SECONDS"/>
+
+    <http:listener-config name="HTTP_Listener_config">
+        <http:listener-connection host="0.0.0.0" port="8081"/>
+    </http:listener-config>
+
+    <flow name="idempotent-subscriber-flow">
+        <anypoint-mq:subscriber config-ref="Anypoint-MQ-Config" destination="${anypoint.mq.queue}"/>
+        <!--  By using MD5 we make sure the idempotent sendsa small value to ObjectStore to avoid issues with OSv2 size limitations-->
+        <idempotent-message-validator objectStore="idempotency-store"
+            idExpression='#[%dw 2.0
+import dw::Crypto
+output application/java
+---
+Crypto::MD5(write(payload, "application/json") as Binary)]'/>
+        <logger level="INFO" message="Message is: #[payload]"/>
+        <error-handler>
+            <!-- If the idempotent-message-validator finds a duplicated MD5, it throw a MULE:DUPLICATE_MESSAGE error, and we are using on-error-continue just to use the automatic "ACK' of the MQ queue -->
+            <on-error-continue type="MULE:DUPLICATE_MESSAGE" logException="false">
+                <logger level="INFO" message="Ignored due to duplicated"/>
+            </on-error-continue>
+        </error-handler>
+    </flow>
+
+</mule>
